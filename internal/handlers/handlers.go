@@ -14,6 +14,7 @@ import (
 
 // App carries shared dependencies (database repositories, sessions) for handlers.
 type App struct {
+	Coworkings *repo.CoworkingRepo
 	Workspaces *repo.WorkspaceRepo
 	Users      *repo.UserRepo
 	Bookings   *repo.BookingRepo
@@ -78,6 +79,9 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/workspaces/update", a.requireAdmin(a.adminWorkspaceUpdateHandler))
 	mux.HandleFunc("/admin/workspaces/toggle", a.requireAdmin(a.adminWorkspaceToggleHandler))
 	mux.HandleFunc("/admin/workspaces/delete", a.requireAdmin(a.adminWorkspaceDeleteHandler))
+	mux.HandleFunc("/admin/coworkings/create", a.requireAdmin(a.adminCoworkingCreateHandler))
+	mux.HandleFunc("/admin/coworkings/update", a.requireAdmin(a.adminCoworkingUpdateHandler))
+	mux.HandleFunc("/admin/coworkings/delete", a.requireAdmin(a.adminCoworkingDeleteHandler))
 	mux.HandleFunc("/admin/bookings/cancel", a.requireAdmin(a.adminBookingCancelHandler))
 	mux.HandleFunc("/admin/bookings/status", a.requireAdmin(a.adminBookingStatusHandler))
 	mux.HandleFunc("/admin/settings", a.requireAdmin(a.adminSettingsHandler))
@@ -161,6 +165,10 @@ func (a *App) bookingsHandler(w http.ResponseWriter, r *http.Request) {
 	statusFilter := r.FormValue("status") // CONFIRMED, COMPLETED, CANCELLED, ALL
 	periodFilter := r.FormValue("period") // all, future, past
 
+	if _, err := a.Bookings.MarkPastCompleted(r.Context(), time.Now()); err != nil {
+		log.Printf("bookings: mark past completed: %v", err)
+	}
+
 	rows, err := a.Bookings.ListByUser(r.Context(), user.ID, nil)
 	if err != nil {
 		log.Printf("bookings: list: %v", err)
@@ -208,7 +216,9 @@ func (a *App) bookingsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		if b.Status == models.StatusConfirmed {
 			v.IsActiveNow = !b.EndTime.Before(now)
-			v.CanCancel = b.StartTime.After(now) // can cancel only future bookings
+			// User can cancel any of their own CONFIRMED bookings until end_time —
+			// including an already-running session ("прервать активное бронирование").
+			v.CanCancel = b.EndTime.After(now)
 		}
 		views = append(views, v)
 	}
