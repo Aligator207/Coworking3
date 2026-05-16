@@ -85,4 +85,30 @@
 </section>
 {{end}}
 {{end}}
+
+{{$saved := index .Data "SavedReports"}}
+<section class="card">
+  <h3 class="card__title">Сохранённые отчёты</h3>
+  <p class="muted">Кнопка «Сохранить отчёт» добавляет запись в таблицу <code>reports</code> базы данных. Здесь видны последние сохранения.</p>
+  {{if not $saved}}
+    <p class="muted">Пока ничего не сохранено.</p>
+  {{else}}
+    <table class="table">
+      <thead><tr><th>Период</th><th>Сохранён</th><th>Кем</th><th></th></tr></thead>
+      <tbody>
+      {{range $saved}}
+        <tr>
+          <td>{{.FromStr}} – {{.ToStr}}</td>
+          <td>{{.GeneratedAt}}</td>
+          <td>{{.Author}}</td>
+          <td>
+            <a class="btn btn--secondary btn--small" href="/admin/report?from={{.FromStr}}&to={{.ToStr}}">Открыть</a>
+            <a class="btn btn--secondary btn--small" href="/admin/report/saved?id={{.ID}}" target="_blank" rel="noopener">JSON</a>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  {{end}}
+</section>
 {{end}}

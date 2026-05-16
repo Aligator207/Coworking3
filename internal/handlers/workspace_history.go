@@ -95,7 +95,7 @@ func (a *App) workspaceHistoryHandler(w http.ResponseWriter, r *http.Request) {
 			Start:      b.StartTime.Local().Format("15:04"),
 			End:        b.EndTime.Local().Format("15:04"),
 			Status:     b.Status,
-			StatusText: humanStatus(b.Status),
+			StatusText: bookingStatusText(b.Status, b.StartTime, b.EndTime, now),
 			IsActive:   b.StartTime.Before(now) && b.EndTime.After(now),
 		}
 		views = append(views, v)
