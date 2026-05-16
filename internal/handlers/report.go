@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -9,6 +11,15 @@ import (
 	"coworking/internal/auth"
 	"coworking/internal/repo"
 )
+
+// savedReportView is the template-friendly representation of a saved report.
+type savedReportView struct {
+	ID          string
+	FromStr     string
+	ToStr       string
+	GeneratedAt string
+	Author      string
+}
 
 // reportHandler renders the admin report for a chosen [from, to] period.
 // Default period is the last 30 days. The result is shown as tables and a
@@ -86,13 +97,61 @@ func (a *App) reportHandler(w http.ResponseWriter, r *http.Request) {
 					log.Printf("report save: %v", err)
 					pd.Data["Error"] = "Не удалось сохранить отчёт"
 				} else {
-					pd.Flash = "Отчёт сохранён"
+					pd.Flash = "Отчёт сохранён в таблице reports"
 				}
 			}
 		}
 	}
 
+	// Always show the list of recently saved reports so the admin can see
+	// where the saved reports went and re-open them.
+	if saved, err := a.Reports.ListRecent(r.Context(), 10); err != nil {
+		log.Printf("report list saved: %v", err)
+	} else {
+		views := make([]savedReportView, 0, len(saved))
+		for _, s := range saved {
+			author := s.AuthorEmail
+			if author == "" {
+				author = "—"
+			}
+			views = append(views, savedReportView{
+				ID:          s.ID,
+				FromStr:     s.From.Local().Format("2006-01-02"),
+				ToStr:       s.To.AddDate(0, 0, -1).Local().Format("2006-01-02"),
+				GeneratedAt: s.GeneratedAt.Local().Format("2006-01-02 15:04"),
+				Author:      author,
+			})
+		}
+		pd.Data["SavedReports"] = views
+	}
+
 	render(w, "report.html", pd)
+}
+
+// reportSavedHandler serves the JSON payload of a previously saved report
+// so the admin can inspect/download it. The response sets a Content-Disposition
+// hint with the report's date range and timestamp.
+func (a *App) reportSavedHandler(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id обязателен", http.StatusBadRequest)
+		return
+	}
+	meta, data, err := a.Reports.FindByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			http.Error(w, "Отчёт не найден", http.StatusNotFound)
+			return
+		}
+		log.Printf("report find: %v", err)
+		http.Error(w, "Не удалось загрузить отчёт", http.StatusInternalServerError)
+		return
+	}
+	filename := "report-" + meta.From.Local().Format("20060102") + "-" +
+		meta.To.AddDate(0, 0, -1).Local().Format("20060102") + ".json"
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header().Set("Content-Disposition", `inline; filename="`+filename+`"`)
+	_, _ = w.Write([]byte(data))
 }
 
 func maxDaily(days []repo.DayStat) int {

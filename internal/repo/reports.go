@@ -153,3 +153,65 @@ func (r *ReportRepo) Save(ctx context.Context, from, to time.Time, dataJSON stri
         VALUES ($1, $2, $3::jsonb, $4)`, from, to, dataJSON, createdBy)
 	return err
 }
+
+// SavedReport is a row from the reports table joined with the author's
+// email/name. It's used to show the list of saved reports in the admin UI.
+type SavedReport struct {
+	ID          string
+	GeneratedAt time.Time
+	From        time.Time
+	To          time.Time
+	AuthorEmail string
+	AuthorName  string
+}
+
+// ListRecent returns the most recent saved reports, newest first.
+func (r *ReportRepo) ListRecent(ctx context.Context, limit int) ([]SavedReport, error) {
+	if limit <= 0 {
+		limit = 10
+	}
+	rows, err := r.DB.QueryContext(ctx, `
+        SELECT r.report_id,
+               r.generated_at,
+               r.date_range_start,
+               r.date_range_end,
+               COALESCE(u.email, ''),
+               COALESCE(u.full_name, '')
+          FROM reports r
+          LEFT JOIN users u ON u.user_id = r.created_by
+         ORDER BY r.generated_at DESC
+         LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]SavedReport, 0, limit)
+	for rows.Next() {
+		var s SavedReport
+		if err := rows.Scan(&s.ID, &s.GeneratedAt, &s.From, &s.To, &s.AuthorEmail, &s.AuthorName); err != nil {
+			return nil, err
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+// FindByID returns the raw JSON payload of a previously saved report.
+// The empty string is returned with sql.ErrNoRows if no such report exists.
+func (r *ReportRepo) FindByID(ctx context.Context, id string) (SavedReport, string, error) {
+	var s SavedReport
+	var data string
+	err := r.DB.QueryRowContext(ctx, `
+        SELECT r.report_id,
+               r.generated_at,
+               r.date_range_start,
+               r.date_range_end,
+               COALESCE(u.email, ''),
+               COALESCE(u.full_name, ''),
+               r.data::text
+          FROM reports r
+          LEFT JOIN users u ON u.user_id = r.created_by
+         WHERE r.report_id = $1`, id).Scan(
+		&s.ID, &s.GeneratedAt, &s.From, &s.To, &s.AuthorEmail, &s.AuthorName, &data)
+	return s, data, err
+}

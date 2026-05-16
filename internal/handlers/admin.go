@@ -104,7 +104,7 @@ func (a *App) adminPanelHandler(w http.ResponseWriter, r *http.Request) {
 			DateStr:     b.StartTime.Local().Format("2006-01-02"),
 			StartStr:    b.StartTime.Local().Format("15:04"),
 			EndStr:      b.EndTime.Local().Format("15:04"),
-			StatusText:  humanStatus(b.Status),
+			StatusText:  bookingStatusText(b.Status, b.StartTime, b.EndTime, now),
 			CanCancel:   b.Status == models.StatusConfirmed && b.StartTime.After(now),
 		})
 	}

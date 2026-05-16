@@ -86,6 +86,7 @@ func (a *App) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/admin/bookings/status", a.requireAdmin(a.adminBookingStatusHandler))
 	mux.HandleFunc("/admin/settings", a.requireAdmin(a.adminSettingsHandler))
 	mux.HandleFunc("/admin/report", a.requireAdmin(a.reportHandler))
+	mux.HandleFunc("/admin/report/saved", a.requireAdmin(a.reportSavedHandler))
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
@@ -212,10 +213,10 @@ func (a *App) bookingsHandler(w http.ResponseWriter, r *http.Request) {
 			Start:      b.StartTime.Local().Format("15:04"),
 			End:        b.EndTime.Local().Format("15:04"),
 			Status:     b.Status,
-			StatusText: humanStatus(b.Status),
+			StatusText: bookingStatusText(b.Status, b.StartTime, b.EndTime, now),
 		}
 		if b.Status == models.StatusConfirmed {
-			v.IsActiveNow = !b.EndTime.Before(now)
+			v.IsActiveNow = b.StartTime.Before(now) && b.EndTime.After(now)
 			// User can cancel any of their own CONFIRMED bookings until end_time —
 			// including an already-running session ("прервать активное бронирование").
 			v.CanCancel = b.EndTime.After(now)
@@ -258,6 +259,23 @@ func humanStatus(s models.BookingStatus) string {
 	default:
 		return string(s)
 	}
+}
+
+// bookingStatusText returns a human label for a booking taking the current
+// time into account: a CONFIRMED booking that has not started yet is shown
+// as "Ожидает начала", and a CONFIRMED booking that has already started but
+// not yet finished is shown as "Идёт сейчас". For any other status the
+// label is the same as humanStatus().
+func bookingStatusText(s models.BookingStatus, start, end, now time.Time) string {
+	if s == models.StatusConfirmed {
+		switch {
+		case now.Before(start):
+			return "Ожидает начала"
+		case now.Before(end):
+			return "Идёт сейчас"
+		}
+	}
+	return humanStatus(s)
 }
 
 
